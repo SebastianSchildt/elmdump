@@ -3,7 +3,8 @@
 
 import configparser
 import serial
-import sys,io
+import sys,io,time 
+from datetime import datetime
 
 
 def waitforprompt(elm):
@@ -66,7 +67,22 @@ def initelm(elm, baud, ack):
         executecommand(elm,b'STCMM 0\r')
 
     
-    
+def parseline(f, line):
+    #print("DEBUG: parse "+line)
+    tf=float(time.time())
+    logline="({:.6f}) {} ".format(tf,"vcan0")
+    items = line.split()
+    if len(items[0]) == 3: #short id
+        logline=logline+items[0]+"#"
+        del items[0]
+    else: #extende id
+        logline=logline+items[0]+items[1]+items[2]+items[3]+"#"
+        items=items[4:]
+
+    for data in items:
+        logline+=data
+    f.write(logline+"\n")
+    #t(logline) 
     
 
 
@@ -86,11 +102,15 @@ canack=cancfg.getboolean('canack',False)
 serialport=sercfg.get('port','/dev/ttyS0')
 serialbaud=sercfg.getint('baud', 115200)
 
+outfile="elmdump"+datetime.now().strftime("%Y-%m-%d_%H-%M-%S.log")
 
 print("CAN bitrate      : {}".format(canspeed))
 print("ACK CAN frames   : {}".format(canack))
 print("Serial port      : {}".format(serialport))
 print("Serial baud rate : {}".format(serialbaud))
+print("Logging to       : {}".format(outfile))
+
+f=open(outfile,'w')
 
 
 elm = serial.Serial()
@@ -110,10 +130,12 @@ initelm(elm, canspeed, canack)
 print("Enter monitoring mode...")
 
 elm.write(b'STMA\r')
+elm.read(5) #Consume echo
 elm.timout=None
 
 while True:
     line=readresponse(elm)
+    parseline(f,line)
     print(line)
 
 elm.close()
