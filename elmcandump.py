@@ -6,6 +6,67 @@ import serial
 import sys,io
 
 
+def waitforprompt(elm):
+    while elm.read() != b'>':
+        pass
+
+def writetoelm(elm,data):
+    #print("Write")
+    length=len(data)
+    elm.write(data)
+    echo=elm.read(length)
+    if echo != data:
+        print("Not the same {}/{}".format(data, echo))
+    #print("Write Done")
+
+def readresponse(elm):
+    response=""
+    while True:
+        d=elm.read()
+        if d == b'\r':
+            return response
+        response=response+d.decode('utf-8')
+        #print("DEBUG: "+response)
+
+def executecommand(elm,command, expectok=True):
+    writetoelm(elm,command)
+    resp=readresponse(elm)
+    if expectok and resp.strip() != "OK" :
+        print("Invalid response {} for command {}".format(resp,command))
+        sys.exit(-1)
+    waitforprompt(elm)
+    return resp
+
+def initelm(elm):
+    print("Detecting ELM...")
+    elm.write(b'\r\r')
+    waitforprompt(elm)
+    writetoelm(elm,b'ATI\r')
+    resp=readresponse(elm)
+    if not resp.startswith("ELM"):
+        print("Unexpected respsne to ATI: {}".format(resp))
+        sys.exit(-1)
+
+    waitforprompt(elm)
+    print("Enable Headers")
+    executecommand(elm,b'AT H1\r')
+    print("Enable Spaces")
+    executecommand(elm,b'AT S1\r')
+    print("Disable DLC")
+    executecommand(elm,b'AT D0\r')
+    print("Set CAN speed")
+    executecommand(elm,b'STP 32\r')
+    executecommand(elm,b'STPBR 500000\r')
+    baud=executecommand(elm,b'STPBRR\r',expectok=False)
+    print("Speed is {}".format(baud))
+
+    
+    
+    
+
+
+
+
 config = configparser.ConfigParser()
 
 config.read('config.ini')
@@ -38,15 +99,16 @@ if not elm.is_open:
     print("Can not open serial port")
     sys.exit(-1)
 
-elmio = io.TextIOWrapper(io.BufferedRWPair(elm, elm), newline='\r')
 
+initelm(elm)
 
-elmio.write('ATI\n')
-elmio.flush()
+print("Enter monitoring mode...")
 
-resp=elmio.readline()
+elm.write(b'STMA\n')
+elm.timout=None
 
-print("Got: "+resp)
-
+while True:
+    line=readresponse(elm)
+    print(line)
 
 elm.close()
