@@ -37,7 +37,7 @@ def executecommand(elm,command, expectok=True):
     waitforprompt(elm)
     return resp
 
-def initelm(elm):
+def initelm(elm, baud, ack):
     print("Detecting ELM...")
     elm.write(b'\r\r')
     waitforprompt(elm)
@@ -56,9 +56,14 @@ def initelm(elm):
     executecommand(elm,b'AT D0\r')
     print("Set CAN speed")
     executecommand(elm,b'STP 32\r')
-    executecommand(elm,b'STPBR 500000\r')
+    cmd="STPBR "+str(baud)+"\r"
+    executecommand(elm,cmd.encode('utf-8'))
     baud=executecommand(elm,b'STPBRR\r',expectok=False)
     print("Speed is {}".format(baud))
+    if ack:
+        executecommand(elm,b'STCMM 1\r')
+    else:
+        executecommand(elm,b'STCMM 0\r')
 
     
     
@@ -100,11 +105,11 @@ if not elm.is_open:
     sys.exit(-1)
 
 
-initelm(elm)
+initelm(elm, canspeed, canack)
 
 print("Enter monitoring mode...")
 
-elm.write(b'STMA\n')
+elm.write(b'STMA\r')
 elm.timout=None
 
 while True:
