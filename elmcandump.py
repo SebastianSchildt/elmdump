@@ -3,8 +3,32 @@
 
 import configparser
 import serial
-import sys,io,time 
+import sys,io,time,signal
+import threading
 from datetime import datetime
+import queue
+
+
+
+def sigint_received(signum, frame):
+    f.flush()
+    f.close()
+    print("Close worker")
+    q.put(None)
+    time.sleep(1)
+    print("Terminate program")
+    sys.exit(0)
+
+#Parsing and saving in seperate thread, to prevent loosing data
+def processline(q,f):
+    while True:
+        line=q.get()
+        if line==None:
+            print("Received nothing from queue. Terminate thread")
+            return
+        parseline(f,line)
+        #print(line)
+        q.task_done()
 
 
 def waitforprompt(elm):
@@ -71,17 +95,20 @@ def parseline(f, line):
     #print("DEBUG: parse "+line)
     tf=float(time.time())
     logline="({:.6f}) {} ".format(tf,"vcan0")
-    items = line.split()
-    if len(items[0]) == 3: #short id
-        logline=logline+items[0]+"#"
-        del items[0]
-    else: #extende id
-        logline=logline+items[0]+items[1]+items[2]+items[3]+"#"
-        items=items[4:]
+    try:
+        items = line.split()
+        if len(items[0]) == 3: #short id
+            logline=logline+items[0]+"#"
+            del items[0]
+        else: #extende id
+            logline=logline+items[0]+items[1]+items[2]+items[3]+"#"
+            items=items[4:]
 
-    for data in items:
-        logline+=data
-    f.write(logline+"\n")
+        for data in items:
+            logline+=data
+        f.write(logline+"\n")
+    except:
+        print("Error. Log line {}, items {}".format(line,items))
     #t(logline) 
     
 
@@ -102,7 +129,7 @@ canack=cancfg.getboolean('canack',False)
 serialport=sercfg.get('port','/dev/ttyS0')
 serialbaud=sercfg.getint('baud', 115200)
 
-outfile="elmdump"+datetime.now().strftime("%Y-%m-%d_%H-%M-%S.log")
+outfile="elmdump-"+datetime.now().strftime("%Y-%m-%d_%H-%M-%S.log")
 
 print("CAN bitrate      : {}".format(canspeed))
 print("ACK CAN frames   : {}".format(canack))
@@ -111,6 +138,10 @@ print("Serial baud rate : {}".format(serialbaud))
 print("Logging to       : {}".format(outfile))
 
 f=open(outfile,'w')
+
+q=queue.Queue()
+
+signal.signal(signal.SIGINT, sigint_received)
 
 
 elm = serial.Serial()
@@ -127,6 +158,9 @@ if not elm.is_open:
 
 initelm(elm, canspeed, canack)
 
+t = threading.Thread(target=processline, args=(q,f,))
+t.start()
+
 print("Enter monitoring mode...")
 
 elm.write(b'STMA\r')
@@ -135,7 +169,6 @@ elm.timout=None
 
 while True:
     line=readresponse(elm)
-    parseline(f,line)
-    print(line)
-
+    q.put(line)
+    
 elm.close()
