@@ -111,7 +111,27 @@ def parseline(f, line):
         print("Error. Log line {}, items {}".format(line,items))
     #t(logline) 
     
-
+class SerReadLineHelper:
+    def __init__(self, s):
+        self.buf = bytearray()
+        self.s = s
+    
+    def readline(self):
+        i = self.buf.find(b"\r")
+        if i >= 0:
+            r = self.buf[:i+1]
+            self.buf = self.buf[i+1:]
+            return r
+        while True:
+            i = max(1, min(2048, self.s.in_waiting))
+            data = self.s.read(i)
+            i = data.find(b"\r")
+            if i >= 0:
+                r = self.buf + data[:i+1]
+                self.buf[0:] = data[i+1:]
+                return r
+            else:
+                self.buf.extend(data)
 
 
 
@@ -167,8 +187,12 @@ elm.write(b'STMA\r')
 elm.read(5) #Consume echo
 elm.timout=None
 
+#Buffered readline wrapper, as pyserial's methods are superslow
+rlh=SerReadLineHelper(elm)
+
 while True:
-    line=readresponse(elm)
-    q.put(line)
+    line=rlh.readline()
+    #print(line)
+    q.put(line.decode('utf-8'))
     
 elm.close()
